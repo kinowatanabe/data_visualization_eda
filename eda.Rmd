@@ -1,0 +1,195 @@
+---
+title: "eda"
+author: "Kino Watanabe"
+date: "2025-10-07"
+output: html_document
+---
+
+```{r}
+library(p8105.datasets)
+library(tidyverse)
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = .6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
+```
+
+Import the dataframe
+
+* `lubridate` for data variables
+```{r}
+data(weather_df)
+
+weather_df = 
+  weather_df |>
+  mutate(
+    month = lubridate::floor_date(date, unit = "month"))
+
+```
+
+Make plots
+```{r}
+weather_df |> 
+  ggplot(aes(x = prcp)) + 
+  geom_histogram()
+```
+Check on extreme variables -- is this real? measurement error?
+* you could cross check online if that's possible for context (NY central parl weather in 9/2021)
+
+```{r}
+weather_df |> 
+  filter(prcp >= 1000)
+```
+
+Look at data again
+* Central park and Molokai -- are on even grid structure
+* Waterhole is all over the place -- what'a happening? WA is measuring temp is tenths of degrees celsius cs NY/HI measuring in F and converting/rounding to C
+```{r}
+weather_df |> 
+  filter(tmax >= 20, tmax <= 30) |> 
+  ggplot(aes(x = tmin, y = tmax, color = name, shape = name)) + 
+  geom_point(alpha = .75)
+```
+
+
+### Add groups
+
+`group_by()` makes these groupings explicit so that they can be included in subsequent operations
+```{r}
+weather_df |>
+  group_by(name, month)
+```
+Group and count things
+
+* Count obs for every month
+```{r}
+weather_df |>
+  group_by(month) |>
+  summarize(n_obs = n())
+```
+* Count obs for every month
+
+* To count things, you could use count() in place of group_by() and summarize() 
+```{r}
+weather_df |>
+  group_by(name) |>
+  summarize(n = n())
+
+weather_df |>
+  count(name) 
+```
+
+* Count obs for every month/name
+```{r}
+weather_df |>
+  group_by(name, month) |>
+  summarize(n = n()) 
+```
+* Count n distinct instances
+
+* count the number of observations in each month and the number of distinct values of date in each month.
+```{r}
+weather_df |>
+  group_by(month) |>
+  summarize(
+    n_obs = n(),
+    n_days = n_distinct(date))
+```
+Compute mean in each month
+* will NA if there's a missing response
+```{r}
+weather_df |>
+  group_by(name, month) |> 
+  summarize(
+      mean_tmax = mean(tmax, na.rm = TRUE),
+      median_tmin = median(tmin, na.rm = TRUE), 
+      sd_precp = sd(prcp, na.rm = TRUE)
+      )
+```
+
+```{r}
+weather_df |>
+  group_by(name, month) |> 
+  summarize(
+      mean_tmax = mean(tmax, na.rm = TRUE)) |> 
+  ggplot(aes(x = month, y = mean_tmax, color = name)) +
+  geom_point() +
+  geom_line() +
+  theme(legend.position = "bottom")
+```
+Somtimes format results more nicely
+```{r}
+weather_df |>
+  group_by(name, month) |> 
+  summarize(
+      mean_tmax = mean(tmax, na.rm = TRUE)) |> 
+  pivot_wider(
+    names_from = name,
+    values_from = mean_tmax) |> 
+  knitr::kable(digits = 1)
+```
+
+### mutate with groups
+
+* Summarizing collapses groups into single data points. In contrast, using mutate() in conjuntion with group_by() will retain all original data points and add new variables computed within groups.
+
+* centered_tmax = tmax - mean_tmax) centers tmax around 0 (0 is avg) --> able to look at seasonal variation
+
+```{r}
+weather_df |>
+  group_by(name) |>
+  mutate(
+    mean_tmax = mean(tmax, na.rm = TRUE),
+    centered_tmax = tmax - mean_tmax) |> 
+  ggplot(aes(x = date, y = centered_tmax, color = name)) + 
+    geom_point() 
+```
+
+Look for cold days
+```{r}
+weather_df |>
+  group_by(name, month) |>
+  mutate(temp_rank = min_rank(tmax)) |> 
+  filter(temp_rank < 2)
+```
+what about lags?
+* does my current value depend on my value yesterday/last visit? how much change was there btwn today and yesterday
+```{r}
+weather_df |>
+  group_by(name) |>
+  mutate(temp_change = tmax - lag(tmax))
+```
+
+use the variables you create
+```{r}
+weather_df |>
+  group_by(name) |>
+  mutate(temp_change = tmax - lag(tmax)) |>
+  summarize(
+    temp_change_sd = sd(temp_change, na.rm = TRUE),
+    temp_change_max = max(temp_change, na.rm = TRUE))
+```
+
+```{r}
+weather_df |>
+  group_by(name) |>
+  mutate(temp_change = tmax - lag(tmax),
+  change_rank = min_rank(desc(temp_change))) |>
+  filter(
+      change_rank < 2
+  )
+```
+
